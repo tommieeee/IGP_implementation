@@ -21,7 +21,7 @@ def agent_regress(traj):
     #k = GPy.kern.GridRBF(1)
     mod_x = GPy.models.GPRegression(time, x_dir, k)
     mod_x.optimize(messages=False)
-    mod_x.optimize_restarts(num_restarts = 30)
+    mod_x.optimize_restarts(num_restarts = 10)
 
     time = traj[:, 0].reshape(len(traj[:, 0]), 1)
     k = GPy.kern.RBF(input_dim=1, variance=1., lengthscale=1.)
@@ -30,7 +30,7 @@ def agent_regress(traj):
     y = y.reshape(len(y), 1)
     m_y = GPy.models.GPRegression(time, y, k)
     m_y.optimize(messages=False)
-    m_y.optimize_restarts(num_restarts = 30)
+    m_y.optimize_restarts(num_restarts = 10)
     m_xy = [mod_x, m_y]
 
     return m_xy
@@ -125,7 +125,7 @@ def navigation(obsv, t_span, destination):
                 continue
             agt_mod = agent_regress(agt_traj)
             mods.append(agt_mod)
-        optimized_path = path_prediction(mods, curr_span, 1000)
+        optimized_path = path_prediction(mods, curr_span, 10)
         robot_path = np.column_stack((curr_span, optimized_path[0, :, :]))
         next_location = robot_path[-1, :]
         p_robot_traj = np.vstack((p_robot_traj, next_location))
