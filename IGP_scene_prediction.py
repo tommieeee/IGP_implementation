@@ -25,15 +25,17 @@ def agent_regress(traj, length, var):
     #TODO: regress x- y- coordinate saparately according to he time points
 
     time = traj[:, 0].reshape(len(traj[:, 0]), 1)
-    x_dir = traj[:, 1]
+    x_ro = traj[0, 1]
+    x_dir = traj[:, 1] - x_ro
     x_dir = x_dir.reshape(len(x_dir), 1)
     mod_x = gp_flow_regress(time, x_dir, length, var)
 
-    y_dir = traj[:, 2]
+    y_ro = traj[0, 2]
+    y_dir = traj[:, 2] - y_ro
     y_dir = y_dir.reshape(len(y_dir), 1)
     mod_y = gp_flow_regress(time, y_dir, length, var)
 
-    m_xy = [mod_x, mod_y]
+    m_xy = [mod_x, mod_y, x_ro, y_ro]
 
     return m_xy
 
@@ -69,8 +71,8 @@ def path_sample(mods, time_axis):
             continue
         x_mod = agt_mod[0]
         y_mod = agt_mod[1]
-        samp_x = x_mod.posterior_samples_f(time_axis, 1) .reshape((-1, 1))
-        samp_y = y_mod.posterior_samples_f(time_axis, 1).reshape((-1, 1))
+        samp_x = x_mod.posterior_samples_f(time_axis, 1).reshape((-1, 1)) + agt_mod[2]
+        samp_y = y_mod.posterior_samples_f(time_axis, 1).reshape((-1, 1)) + agt_mod[3]
         # samp_x = x_mod.sample_y(time_axis, 1).reshape((-1, 1))
         # samp_y = y_mod.sample_y(time_axis, 1).reshape((-1, 1))
         coord = np.column_stack((samp_x, samp_y))
