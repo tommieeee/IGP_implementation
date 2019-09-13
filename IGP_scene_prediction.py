@@ -1,6 +1,8 @@
 import numpy as np
 import GPy
 import math
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
 
 
 def gp_flow_regress(time, dir, length, var):
@@ -168,3 +170,44 @@ def navigation(obsv, t_span, l_scale, var_scale, s_amount):
             navi_result[i] = agt
 
     return navi_result, mods
+
+def data_clean(start_point, end_point, interval_len):
+    mat = np.genfromtxt("data/annotations.txt")  # read file
+    mat_str = np.genfromtxt("data/annotations.txt", dtype='str')
+    agent_pool = mat[mat[:, 6] == 0]
+
+    agents_present = agent_pool[np.logical_and(agent_pool[:, 5] < end_point+1, agent_pool[:, 5] > start_point-1)]
+    agents_number = np.unique(agents_present[:, 0])
+
+    agent = []
+    for i in agents_number:
+        temp = agents_present[agents_present[:, 0] == i]
+        temp = temp[temp[:, 5] % interval_len == 0]
+        x_coord = (temp[:, 3] - temp[:, 1]) / 2 + temp[:, 1]
+        y_coord = (temp[:, 4] - temp[:, 2]) / 2 + temp[:, 2]
+        agent_temp = np.column_stack((temp[:, 5], x_coord, y_coord))
+        agent_temp[:, 0] = agent_temp[:, 0] - 300
+        agent.append(agent_temp)
+
+    observation = []
+    for i in agent:
+        if len(i) < 8:
+            observation.append(i)
+            continue
+        observation.append(i[0:8, :])
+
+    time_span = np.array([range(interval_len*8, interval_len*20+1, 12)]).reshape((-1, 1))
+
+    return agent, observation, time_span
+
+def overall_plot(agent, result):
+    img = mpimg.imread('data/reference.jpg')
+    trej_ori = agent
+    trej_result = result
+    for i in range(0, len(agent)):
+        plt.imshow(img)
+        plt.plot(trej_ori[i][:, 1], trej_ori[i][:, 2], "green")
+        plt.plot(trej_result[i][0:len(trej_ori[i]), 1], trej_result[i][0:len(trej_ori[i]), 2], "red")
+        plt.plot(trej_ori[i][0:8, 1], trej_ori[i][0:8, 2], "blue")
+        plt.axis([0, 1409, 1916, 0])
+    plt.show()
