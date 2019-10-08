@@ -8,11 +8,12 @@ import matplotlib.image as mpimg
 def gp_flow_regress(time, dir, length, var):
 
     k_mat = GPy.kern.Matern52(input_dim=1, variance=var, lengthscale=length)
-    k_lin = GPy.kern.Linear(1)
+    k_RBF = GPy.kern.RBF(1, variance=var, lengthscale=length)
     k = k_mat
+    normer = GPy.normalizer._Norm
     mod = GPy.models.GPRegression(time, dir, k)
     mod.optimize(messages=False)
-    mod.optimize_restarts(num_restarts=10)
+    mod.optimize_restarts(num_restarts=3)
 
     return mod
 
@@ -82,7 +83,7 @@ def path_sample(mods, time_axis):
     return sample_path
 
 
-def path_prediction(mods, t_points, samp_num, h_value):
+def path_prediction(mods, t_points, samp_num, h_value, alpha_value):
     """
     find the predicted path of the overall crowds with the max interaction potential
     :param mods: GP model of each agent and provisional ROBOT
@@ -91,7 +92,7 @@ def path_prediction(mods, t_points, samp_num, h_value):
     :return: trajectory with the max interaction potential at the time span
     """
     h = h_value  # change the parameter h = 24.76
-    alpha = 0.99
+    alpha = alpha_value
     time_points = t_points.reshape((-1,1))
     sample_collection = np.zeros((samp_num, len(mods), len(time_points), 2))
     interact_pot = np.empty((samp_num, 1))
@@ -114,7 +115,7 @@ def time_match(agt, t_point):
     return curr_traj
 
 
-def navigation(obsv, t_span, l_scale, var_scale, s_amount):
+def navigation(obsv, t_span, l_scale, var_scale, s_amount, h_scale, alpha, inputsize):
     """
     navigate the provisional ROBOT through the crowd
     :param obsv: observed trajectory of the crowd
@@ -123,6 +124,8 @@ def navigation(obsv, t_span, l_scale, var_scale, s_amount):
     :param l_scale: length scale for the GP_regression
     :param var_scale: variance hyperparameter for the GP_regression
     :param s_amount: amount of sample draw for IGP
+    :param h_scale: safety distance in terms of the multiples of min distance within the scene
+    :param alpha: level of restriction on the safety distance
     :return: trajectory the provisional ROBOT takes
     """
 
@@ -158,11 +161,11 @@ def navigation(obsv, t_span, l_scale, var_scale, s_amount):
                 min_distance_collect.append(dist)
         numpy_min_collect = np.array(min_distance_collect)
         h_value = numpy_min_collect.min()
-        optimized_path = path_prediction(mods, curr_span, s_amount, h_value)  # change the number sample
+        optimized_path = path_prediction(mods, curr_span, s_amount, h_value*h_scale, alpha)  # change the number sample
         for i in range(0, len(navi_result)):
             agt = navi_result[i]
             agt_traj = time_match(agt, t_point)
-            if len(agt_traj) < 8:
+            if len(agt_traj) < inputsize:
                 continue
             opt_path_i = np.column_stack((curr_span, optimized_path[i, :, :]))
             next_location = opt_path_i[-1, :]
@@ -186,17 +189,17 @@ def data_clean(start_point, end_point, interval_len):
         x_coord = (temp[:, 3] - temp[:, 1]) / 2 + temp[:, 1]
         y_coord = (temp[:, 4] - temp[:, 2]) / 2 + temp[:, 2]
         agent_temp = np.column_stack((temp[:, 5], x_coord, y_coord))
-        agent_temp[:, 0] = agent_temp[:, 0] - 300
+        agent_temp[:, 0] = agent_temp[:, 0] - start_point
         agent.append(agent_temp)
 
     observation = []
     for i in agent:
-        if len(i) < 8:
+        if len(i) < 12:
             observation.append(i)
             continue
-        observation.append(i[0:8, :])
+        observation.append(i[0:12, :])
 
-    time_span = np.array([range(interval_len*8, interval_len*20+1, 12)]).reshape((-1, 1))
+    time_span = np.array([range(interval_len*8, interval_len*20+1, interval_len)]).reshape((-1, 1))
 
     return agent, observation, time_span
 
@@ -211,3 +214,27 @@ def overall_plot(agent, result):
         plt.plot(trej_ori[i][0:8, 1], trej_ori[i][0:8, 2], "blue")
         plt.axis([0, 1409, 1916, 0])
     plt.show()
+
+
+def ade_and_fde(agent, current_interval):
+    ade = np.zeros((len(agent) + 1, 1))
+    fde = np.zeros((len(agent) + 1, 1))
+    legal_agent = len(agent)
+    for j in range(0, len(agent)):
+        ade_sum_single = 0
+        g_truth = agent[j]
+        navi = current_interval[j]
+        if len(g_truth) <= 8:
+            legal_agent -= 1
+            continue
+        for k in range(8, len(g_truth)):
+            d_error = (g_truth[k, 1] - navi[k, 1]) ** 2 + (g_truth[k, 2] - navi[k, 2]) ** 2
+            d_error = math.sqrt(d_error)
+            ade_sum_single += d_error
+        ade[j, 0] = ade_sum_single / len(g_truth)
+        fd_error = (g_truth[-1, 1] - navi[-1, 1]) ** 2 + (g_truth[-1, 2] - navi[-1, 2]) ** 2
+        fde[j, 0] = math.sqrt(fd_error)
+    ade[-1, 0] = np.sum(ade[0:len(agent), 0]) / legal_agent
+    fde[-1, 0] = np.sum(fde[0:len(agent), 0]) / legal_agent
+
+    return ade, fde
